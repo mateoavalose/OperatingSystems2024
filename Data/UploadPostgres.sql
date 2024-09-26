@@ -1,4 +1,4 @@
-DROP TABLE MusicTRacks
+DROP TABLE IF EXISTS MusicTRacks
 
 CREATE TABLE MusicTracks (
 	TrackID UUID PRIMARY KEY,
