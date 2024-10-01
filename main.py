@@ -1,10 +1,14 @@
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Query, HTTPException, Request
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+import asyncpg
+from asyncpg.exceptions import DataError, UniqueViolationError
 from pydantic import BaseModel
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
+from typing import List
 
+# Create the FastAPI application
 app = FastAPI()
 
 ### Database connection from .env
@@ -14,44 +18,61 @@ load_dotenv()
 # Get the DATABASE_URL from the .env file
 DATABASE_URL = os.getenv('DATABASE_URL')
 
-# SQLAlchemy engine and session
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Función para obtener una conexión a la base de datos
+async def get_connection():
+	return await asyncpg.connect(DATABASE_URL)
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# Startup and closedown events 
+@app.on_event("startup")
+async def startup_event():
+	app.state.db = await get_connection()
 
-@app.get("/")
-def read_root(db: Session = Depends(get_db)):
-    try:
-        # Run a simple query to test the connection
-        db.execute(text("SELECT 1"))
-        return {"message": "Connected to the database"}
-    except Exception as e:
-        return {"message": "Failed to connect to the database", "error": str(e)}
+@app.on_event("shutdown")
+async def shutdown_event():
+	await app.state.db.close()
 
+# Dataset model
+class Dataset(BaseModel):
+	track: str
+	artist: str
+	year: int
+	duration: str
+
+# Response model
+class ResponseModel(BaseModel):
+	data: List[Dataset]
+	page: int
+	limit: int
+
+# Complete model
 class Item(BaseModel):
-    TrackID: str = 'id',
-    Track: str = 'track',
-    Artist: str = 'track',
-    Album: str = 'album',
-    Year: int = 0000,
-    Duration: str = 'duration',
-    Time_Signature: int = 0,
-    Danceability: float = 0.00,
-    Energy: float = 0.00,
-    Key: int = 0,
-    Loudness: float = 0.00,
-    Mode: int = 0,
-    Speechiness: float = 0.00,
-    Acousticness: float = 0.00,
-    Instrumentalness: float = 0.00,
-    Liveness: float = 0.00,
-    Valence: float = 0.00,
-    Tempo: float = 0.0,
-    Popularity: int = 0
+	TrackID: str
+	Track: str
+	Artist: str
+	Album: str
+	Year: int
+	Duration: str
+	Time_Signature: int
+	Danceability: float
+	Energy: float
+	Key: int
+	Loudness: float
+	Mode: int
+	Speechiness: float
+	Acousticness: float
+	Instrumentalness: float
+	Liveness: float
+	Valence: float
+	Tempo: float
+	Popularity: int
 
+# Query to test connection to the database
+@app.get("/")
+async def read_root():
+	try:
+	   rows = await app.state.db.fetch('''
+		SELECT 1
+		''')
+	   return {"message": "Connected to the database"}
+	except Exception as e:
+		return {"message": "Failed to connect to the database", "error": str(e)}
