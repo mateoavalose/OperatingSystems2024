@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import asyncpg
 from asyncpg.exceptions import DataError, UniqueViolationError
-from pydantic import BaseModel
+from pydantic import BaseModel, condecimal, conint
 from typing import List, Optional
 
 # Create the FastAPI application
@@ -106,3 +106,62 @@ async def get_tracks(
 		return ResponseModel(total=total, page=page, total_pages=total_pages, data=data)
 	except Exception as e:
 		raise HTTPException(status_code=500, detail=str(e))
+
+# Pydantic moddel to validate input
+class TrackInput(BaseModel):
+    track: str
+    artist: str
+    album: str
+    year: int
+    duration: str
+    time_signature: int
+    danceability: float
+    energy: float
+    key: int
+    loudness: float
+    mode: int
+    speechiness: float
+    acousticness: float
+    instrumentalness: float
+    liveness: float
+    valence: float
+    tempo: float
+    popularity: int
+
+# Response with the rows inserted
+class InsertResponseModel(BaseModel):
+    added_records: int
+    total_records: int
+
+# Endpoint to insert values into the database
+@app.post("/tracks", response_model=InsertResponseModel)
+async def ingest_tracks(tracks: List[TrackInput]):
+    try:
+        # SQL para insertar los datos en la tabla (excluyendo TrackID)
+        insert_query = '''
+            INSERT INTO musictracks (
+                track, artist, album, year, duration, time_signature, danceability, energy,
+                key, loudness, mode, speechiness, acousticness, instrumentalness, liveness,
+                valence, tempo, popularity
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        '''
+
+        # Iniciar la transacción e iterar sobre cada track para agregarlo a la base de datos
+        async with app.state.db.transaction():
+            for track in tracks:
+                await app.state.db.execute(insert_query,
+                    track.track, track.artist, track.album, track.year, track.duration,
+                    track.time_signature, track.danceability, track.energy, track.key,
+                    track.loudness, track.mode, track.speechiness, track.acousticness,
+                    track.instrumentalness, track.liveness, track.valence, track.tempo, track.popularity
+                )
+        
+        # Obtener el total de registros en la tabla después de la inserción
+        total_query = "SELECT COUNT(*) FROM musictracks"
+        total_records = await app.state.db.fetchval(total_query)
+
+        # Devolver el número de registros agregados y el total de registros en la base de datos
+        return InsertResponseModel(added_records=len(tracks), total_records=total_records)
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error inserting records: {str(e)}")
