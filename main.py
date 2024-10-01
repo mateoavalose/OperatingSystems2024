@@ -59,19 +59,17 @@ async def read_root():
 # Endpoint for filtering and paginating the data
 @app.get("/tracks", response_model=ResponseModel)
 async def get_tracks(
-	page: Optional[int] = Query(None, ge=1),  # Paginación: número de página (opcional)
-	track: Optional[str] = None,  # Filtro opcional por nombre de pista
-	artist: Optional[str] = None,  # Filtro opcional por artista
-	year: Optional[int] = None  # Filtro opcional por año
+	page: Optional[int] = Query(None, ge=1),  # Page number (optional)
+	track: Optional[str] = None,  # Optional filter by track name
+	artist: Optional[str] = None,  # Optional filter by artist's name
+	year: Optional[int] = None  # Optional filter by year 
 ):
-	# Límite fijo de 100 registros por página
+	# Fixed limit to 100 rows per page
 	limit = 100
-
-	# Construir consulta SQL dinámica
+	# SQL Dynamic Query
 	query = "SELECT track, artist, year, duration FROM musictracks"
 	filters = []
 	params = []
-
 	if track:
 		filters.append("track ILIKE $1")
 		params.append(f"%{track}%")
@@ -81,41 +79,30 @@ async def get_tracks(
 	if year:
 		filters.append("year = $" + str(len(params) + 1))
 		params.append(year)
-
 	if filters:
 		query += " WHERE " + " AND ".join(filters)
-
-	# Obtener total de filas sin paginación
+	# Obtain total rows without pagination
 	total_query = "SELECT COUNT(*) FROM musictracks"
 	if filters:
 		total_query += " WHERE " + " AND ".join(filters)
-
 	try:
 		total = await app.state.db.fetchval(total_query, *params)
-
 		if total == 0:
 			return ResponseModel(total=0, page=None, total_pages=None, data=[])
-
-		# Calcular número de páginas totales
+		# Calculate total pages
 		total_pages = (total + limit - 1) // limit
-
-		# Si no se especifica la página y hay más de 100 registros, por defecto es la primera página
+		# If no page is filtered and there's more than 100 rows, default to the first page
 		if page is None and total > limit:
 			page = 1
-
-		# Aplicar paginación solo si hay más de 100 registros
+		# Apply pagination only if there are more than 100 rows
 		if page:
 			offset = (page - 1) * limit
 			query += f" LIMIT {limit} OFFSET {offset}"
 		else:
 			query += f" LIMIT {limit}"
-
-		# Ejecutar consulta con paginación
+		# Execute query with pagination
 		rows = await app.state.db.fetch(query, *params)
-
 		data = [Dataset(track=row['track'], artist=row['artist'], year=row['year'], duration=row['duration']) for row in rows]
-
 		return ResponseModel(total=total, page=page, total_pages=total_pages, data=data)
-	
 	except Exception as e:
 		raise HTTPException(status_code=500, detail=str(e))
