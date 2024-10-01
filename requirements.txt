@@ -1,8 +1,6 @@
 fastapi 
 uvicorn
+asyncpg
+pydantic
 python-dotenv
-sqlalchemy
-sqlalchemy.orm
-psycopg2
-libpq-dev 
-python3-dev
+requests
