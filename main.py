@@ -7,9 +7,15 @@ import asyncpg
 from asyncpg.exceptions import DataError, UniqueViolationError
 from pydantic import BaseModel, condecimal, conint
 from typing import List, Optional
+import boto3
+import json
 
 # Create the FastAPI application
 app = FastAPI()
+
+# AWS S3 configuration
+s3_client = boto3.client('s3')
+BUCKET_NAME = os.getenv('AWS_S3_BUCKET')
 
 ### Database connection from .env
 # Load environment variables from .env file
@@ -48,14 +54,14 @@ class ResponseModel(BaseModel):
 # Query to test connection to the database
 @app.get("/")
 async def read_root():
-	try:
-	   rows = await app.state.db.fetch('''
-		SELECT 1
-		''')
-	   return {"message": "Connected to the database"}
-	except Exception as e:
-		return {"message": "Failed to connect to the database", "error": str(e)}
-
+    try:
+        rows = await app.state.db.fetch('''
+            SELECT 1
+        ''')
+        return {"message": "Connected to the database"}
+    except Exception as e:
+        return {"message": "Failed to connect to the database", "error": str(e)}
+    
 # Endpoint for filtering and paginating the data
 @app.get("/tracks", response_model=ResponseModel)
 async def get_tracks(
@@ -133,6 +139,19 @@ class InsertResponseModel(BaseModel):
     added_records: int
     total_records: int
 
+# Function to upload JSON data to S3 bucket
+async def upload_to_s3(data: dict, filename: str):
+    try:
+        s3_client.put_object(
+            Body=json.dumps(data),  # Convert data to JSON
+            Bucket=BUCKET_NAME,
+            Key=filename,  # File name in the bucket
+            ContentType='application/json'
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload to S3: {str(e)}")
+
+
 # Endpoint to insert values into the database
 @app.post("/tracks", response_model=InsertResponseModel)
 async def ingest_tracks(tracks: List[TrackInput]):
@@ -156,6 +175,10 @@ async def ingest_tracks(tracks: List[TrackInput]):
                     track.instrumentalness, track.liveness, track.valence, track.tempo, track.popularity
                 )
         
+         # Upload each inserted track to S3 in JSON format
+                filename = f"{track.artist}_{track.track}.json"  # You can customize this
+                track_data = track.dict()  # Convert the Pydantic model to a dictionary
+                await upload_to_s3(track_data, filename)
         # Obtener el total de registros en la tabla después de la inserción
         total_query = "SELECT COUNT(*) FROM musictracks"
         total_records = await app.state.db.fetchval(total_query)
