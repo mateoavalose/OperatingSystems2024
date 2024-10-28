@@ -1,87 +1,224 @@
-# Operating Systems - FastAPI 
+#  FastAPI Service Deployment in AWS
 
-## Overview
+This guide provides a comprehensive walkthrough for deploying a FastAPI application on an Amazon EC2 instance. It covers setting up a PostgreSQL database with Docker, managing the application as a systemd service, and making it publicly accessible via an Elastic IP.
 
-This project is a FastAPI-based web service for querying and inserting data into a relational database. The project demonstrates the use of RESTful endpoints to interact with a dataset loaded into a database, implementing features like filtering, pagination, and data validation.
+## Prerequisites
+1. **FastAPI application** created and tested locally.
+2. **Data** in `.csv` format to load into PostgreSQL.
+3. **SQL script** to create tables and import the `.csv` data.
 
-## How to Run the Project
+### Notes
+- This example uses the `docker-compose.yaml` file, `.csv` file, and **FastAPI** app from this repository.
 
-### 1. Set up the Virtual Environment
+---
+
+## Steps
+
+### 1. Create an EC2 Instance on AWS
+1. Go to the **EC2 Dashboard** in AWS Console.
+2. Click **Launch Instance** and configure:
+   - **AMI**: Select **Ubuntu Server 20.04 LTS**.
+   - **Instance Type**: Use **t2.micro** for testing.
+   - **Key Pair**: Choose or create a key pair (e.g., `ec2-so.pem`).
+   - **Network Settings**: Allow SSH (port 22).
+3. Click **Launch Instance**.
+
+### 2. Connect to the EC2 Instance
+Connect using SSH:
 ```bash
-source /path/to/your/venv/bin/activate
+ssh -i "ec2-so.pem" ubuntu@<your-ec2-public-ip>
+```
+Or, use the **Connect** option in AWS Console.
+
+### 3. Update System Packages
+```bash
+sudo apt update && sudo apt upgrade -y
 ```
 
-### 2. Install Dependencies
+### 4. Install Python and Pip
 ```bash
-pip install -r requirements.txt
+sudo apt install python3-pip -y
 ```
 
-### 3. Run the Application
+### 5. Install Miniconda (Optional) or Set Up Virtual Environment
+Miniconda is optional for package management. Use Miniconda for convenience or set up a `venv` virtual environment. Global installation is also possible.
+
+**Using Miniconda:**
+1. Install and initialize Miniconda:
+   ```bash
+   wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+   bash Miniconda3-latest-Linux-x86_64.sh
+   ~/miniconda3/bin/conda init
+   sudo reboot
+   ```
+2. After reconnecting via SSH, set up a virtual environment:
+   ```bash
+   conda create --name FastAPI python=3.8
+   conda activate FastAPI
+   ```
+3. Install packages:
+   ```bash
+   pip install fastapi[all] asyncpg boto3 python-dotenv
+   ```
+
+**Without Miniconda:**
+1. Set up `venv`:
+   ```bash
+   python3 -m venv FastAPI
+   source FastAPI/bin/activate
+   ```
+2. Install packages:
+   ```bash
+   pip install fastapi[all] asyncpg boto3 python-dotenv
+   ```
+
+### 6. Clone the Repository
 ```bash
-uvicorn main:app --reload
+git clone https://github.com/mateoavalose/OperatingSystems2024
+cd OperatingSystems2024
 ```
 
-### 4. Enable Service on System Startup
+### 7. Configure Environment Variables
+Create `.env`:
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl start OperatingSystems-FastAPI
-sudo systemctl enable OperatingSystems-FastAPI
+nano .env
+```
+Add:
+```perl
+DATABASE_URL=postgresql://user:password@localhost:5433/ClassicRock
 ```
 
-### 5. Test the API
-Use the provided `endpointTest.sh` script to verify that the API is working as expected.
-
-### 6. Public Access via NGROK
-Start the NGROK service to make the API publicly accessible:
+### 8. Set Up Docker and PostgreSQL
+Install Docker:
 ```bash
-ngrok http 8000
+sudo snap install docker
+sudo chmod 666 /var/run/docker.sock
+```
+Start containers:
+```bash
+docker-compose up -d
+docker update --restart unless-stopped postgres-operatingSystems
+docker ps
 ```
 
-## Repository Structure
+### 9. Prepare PostgreSQL Database
+1. Enter PostgreSQL container and create a data directory:
+   ```bash
+   docker exec -it postgres-operatingSystems bash
+   mkdir Data
+   exit
+   ```
+2. Copy `.csv` file to the container:
+   ```bash
+   docker cp ./Data/UltimateClassicRock.csv postgres-operatingSystems:/Data/
+   ```
+3. Edit SQL script (`Data/UploadPostgres.sql`) to structure and load data, then run it:
+   SQL script used in example:
+   ```sql
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
-- `main.py`: FastAPI application code.
-- `requirements.txt`: List of project dependencies.
-- `data_loading.sql`: Script to load the dataset into the database.
-- `endpointTest.sh`: Bash script for testing the API.
-- `OperatingSystems-FastAPI.service`: Systemd service file for auto-start on machine boot.
-- `setup.sh`: Bash script for setting up the virtual environment and installing dependencies.
+    DROP TABLE IF EXISTS MusicTracks;
+    
+    CREATE TABLE MusicTracks (
+        TrackID UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        Track TEXT,
+        Artist TEXT,
+        Album TEXT,
+        Year INT,
+        Duration TEXT,
+        Time_Signature INT,
+        Danceability DECIMAL(5, 2),
+        Energy DECIMAL(5, 2),
+        Key INT,
+        Loudness DECIMAL(5, 2),
+        Mode INT,
+        Speechiness DECIMAL(5, 2),
+        Acousticness DECIMAL(5, 2),
+        Instrumentalness DECIMAL(5, 2),
+        Liveness DECIMAL(5, 2),
+        Valence DECIMAL(5, 2),
+        Tempo DECIMAL(6, 2),
+        Popularity INT
+    );
+    
+    COPY MusicTracks (Track, Artist, Album, Year, Duration, Time_Signature, Danceability, Energy, Key, Loudness, Mode, Speechiness, Acousticness, Instrumentalness, Liveness, Valence, Tempo, Popularity)
+    FROM '/Data/UltimateClassicRock.csv'
+    DELIMITER ','
+    CSV HEADER;
+    
+    SELECT COUNT(*) FROM MusicTracks;
+   ```
+   When the SQL script is ready, run:
+   ```bash
+   docker cp ./Data/*.sql postgres-operatingSystems:/Data/
+   docker exec -it postgres-operatingSystems bash
+   psql -U user -d ClassicRock -f /Data/UploadPostgres.sql
+   rm -rf Data/
+   exit
+   ```
 
-## Project Components
+### 10. Set Up FastAPI as a Systemd Service
+1. Create service file:
+   ```bash
+   sudo nano /etc/systemd/system/OperatingSystems-FastAPI.service
+   ```
+2. Add the following:
+   ```ini
+   [Unit]
+   Description=FastAPI Application
+   After=network.target
 
-### 1. Dataset Selection
-The dataset used must contain at least 1000 records and include fields such as numerical or date-based columns. Some recommended sources for datasets include:
-- [Kaggle Datasets](https://www.kaggle.com/datasets)
-- [Datos Gov](https://www.datos.gov.co/browse?sortBy=newest)
+   [Service]
+   User=ubuntu
+   Group=ubuntu
+   WorkingDirectory=/home/ubuntu/OperatingSystems2024
+   ExecStart=/home/ubuntu/miniconda3/envs/FastAPI/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+   Restart=always
+   RestartSec=5
 
-### 2. Database Setup
-The dataset is loaded into a relational database such as PostgreSQL, MySQL, or DuckDB. The script used for loading data is included in the repository under the `data_loading.sql` file.
+   [Install]
+   WantedBy=multi-user.target
+   ```
+3. Start and enable service:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl start OperatingSystems-FastAPI
+   sudo systemctl enable OperatingSystems-FastAPI
+   sudo reboot
+   ```
+4. Verify service status:
+   ```bash
+   sudo systemctl status OperatingSystems-FastAPI
+   ```
 
-### 3. Virtual Environment and Dependencies
-A virtual environment is used to manage project dependencies, which are listed in `requirements.txt`. To install the dependencies, run:
+### 11. Test Endpoints Locally
 ```bash
-bash setup.sh
+curl -X 'GET' "http://127.0.0.1:8000/" -H 'accept: application/json'
+```
+Expected response: `{"message": "Connected to the database"}`.
+
+### 12. Expose the Application Publicly
+#### A. Assign an Elastic IP
+1. In **Elastic IPs** on AWS, allocate and associate a new Elastic IP with your EC2 instance.
+
+#### B. Configure Security Group
+Update the security group to allow inbound traffic on port 8000:
+1. Navigate to **Security Groups** in AWS.
+2. Edit **Inbound rules**:
+   - Type: **Custom TCP**
+   - Protocol: **TCP**
+   - Port Range: **8000**
+   - Source: **0.0.0.0/0** (public access).
+3. Save changes.
+
+### 13. Access the FastAPI Application
+Use the public IP to access FastAPI:
+```url
+http://<your-elastic-ip>:8000/
+```
+For Swagger documentation:
+```url
+http://<your-elastic-ip>:8000/docs
 ```
 
-### 4. FastAPI Endpoints
-
-#### **GET Endpoint**
-- Allows users to query data from the database.
-- Supports filtering to avoid returning the entire table.
-- Paginated responses with a maximum of 100 records per request. A mechanism to retrieve the next set of data is implemented.
-
-#### **POST Endpoint**
-- Allows the insertion of new data into the database.
-- Implements Pydantic models for validation of incoming data.
-- The response includes the number of records inserted and the total records in the database after insertion.
-
-### 5. Error Handling
-The API includes proper exception handling to return the correct HTTP status codes in case of errors (e.g., 400 Bad Request, 500 Internal Server Error).
-
-### 6. Endpoint Testing
-A bash script (`endpointTest.sh`) is provided for testing both the GET and POST endpoints. It verifies both successful and unsuccessful cases using `curl`.
-
-### 7. Service Setup
-A `.service` file is configured for the FastAPI application to run automatically on system startup. This is designed to work with systemd on a WSL environment.
-
-### 8. NGROK Integration
-NGROK is used to make the API accessible over the internet. The configuration for this is included in the repository, and a public URL is generated for easy testing and access.
+--- 
