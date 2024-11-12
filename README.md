@@ -84,7 +84,7 @@ Esta línea ejecuta el script `script.sh` cada lunes a las 2:30 AM.
 ### Ejecución Inicial
 
 Al iniciar por primera vez el comando `crontab -e` e iniciar nano, aparece el siguiente archivo:
-```vim
+```plaintext
 # Edit this file to introduce tasks to be run by cron.
 #
 # Each task to run has to be defined through a single line
@@ -132,7 +132,7 @@ crontab -l
 Esta funcionalidad permite realizar tareas repetitivas y de mantenimiento en el sistema sin intervención manual.
 El `crontab` quedó de la siguiente forma:
 
-```vim
+```plaintext
 # Edit this file to introduce tasks to be run by cron.
 #
 # Each task to run has to be defined through a single line
