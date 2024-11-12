@@ -11,3 +11,6 @@ for file in "$storage_dir"/*.json; do
         rm "$file"
     fi
 done
+
+# Crontab command:
+# 45 7 * * * bash /home/mateo/OperatingSystems-Final/backup-s3.sh
